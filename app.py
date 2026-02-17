@@ -9,7 +9,7 @@ from io import BytesIO
 conn = sqlite3.connect("attendance.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Safe Table Creation
+# Create tables if not exist
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS admin(
     username TEXT,
@@ -63,7 +63,26 @@ CREATE TABLE IF NOT EXISTS attendance(
 
 conn.commit()
 
-# Default Admin
+# -------- AUTO FIX OLD TABLE STRUCTURE --------
+
+cursor.execute("PRAGMA table_info(attendance)")
+columns = [col[1] for col in cursor.fetchall()]
+
+if "student_name" not in columns:
+    cursor.execute("DROP TABLE attendance")
+    cursor.execute("""
+    CREATE TABLE attendance(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT,
+        student_name TEXT,
+        subject TEXT,
+        date TEXT,
+        time TEXT
+    )
+    """)
+    conn.commit()
+
+# Default admin
 cursor.execute("SELECT * FROM admin")
 if not cursor.fetchone():
     cursor.execute("INSERT INTO admin VALUES('admin','admin')")
@@ -275,17 +294,13 @@ def mark_attendance(session_id):
             st.warning("Already Marked")
             return
 
-        try:
-            cursor.execute("""
-            INSERT INTO attendance(student_id,student_name,subject,date,time)
-            VALUES(?,?,?,?,?)
-            """,(sid,stu[0],subject,today,str(datetime.now().time())))
+        cursor.execute("""
+        INSERT INTO attendance(student_id,student_name,subject,date,time)
+        VALUES(?,?,?,?,?)
+        """,(sid,stu[0],subject,today,str(datetime.now().time())))
 
-            conn.commit()
-            st.success("Attendance Marked Successfully")
-
-        except Exception as e:
-            st.error(f"Database Error: {e}")
+        conn.commit()
+        st.success("Attendance Marked Successfully")
 
 # ---------------- MAIN ----------------
 
