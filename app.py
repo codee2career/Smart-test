@@ -9,7 +9,7 @@ from io import BytesIO
 conn = sqlite3.connect("attendance.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Admin
+# Safe Table Creation
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS admin(
     username TEXT,
@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS admin(
 )
 """)
 
-# Teachers
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS teachers(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +26,6 @@ CREATE TABLE IF NOT EXISTS teachers(
 )
 """)
 
-# Students
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS students(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +34,6 @@ CREATE TABLE IF NOT EXISTS students(
 )
 """)
 
-# Subjects
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS subjects(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +41,6 @@ CREATE TABLE IF NOT EXISTS subjects(
 )
 """)
 
-# QR Session
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS qr_session(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +50,6 @@ CREATE TABLE IF NOT EXISTS qr_session(
 )
 """)
 
-# Attendance
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS attendance(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +75,6 @@ def login_page():
     st.title("🔐 Login")
 
     role = st.selectbox("Login As", ["Admin", "Teacher"])
-
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
 
@@ -91,17 +85,15 @@ def login_page():
                            (username,password))
             if cursor.fetchone():
                 st.session_state.role = "admin"
-                st.session_state.user = username
                 st.rerun()
             else:
                 st.error("Invalid Admin Credentials")
 
-        if role == "Teacher":
+        else:
             cursor.execute("SELECT * FROM teachers WHERE username=? AND password=?",
                            (username,password))
             if cursor.fetchone():
                 st.session_state.role = "teacher"
-                st.session_state.user = username
                 st.rerun()
             else:
                 st.error("Invalid Teacher Credentials")
@@ -110,13 +102,12 @@ def login_page():
 
 def dashboard():
 
-    st.title(f"📊 {st.session_state.role.upper()} Dashboard")
+    st.title(f"{st.session_state.role.upper()} Dashboard")
 
     if st.session_state.role == "admin":
         menu = st.sidebar.selectbox("Menu",
             ["Add Student","Add Teacher","Add Subject",
              "Generate QR","View Report","Logout"])
-
     else:
         menu = st.sidebar.selectbox("Menu",
             ["Generate QR","View Report","Logout"])
@@ -133,7 +124,7 @@ def dashboard():
                 conn.commit()
                 st.success("Student Added")
             except:
-                st.error("Student ID exists")
+                st.error("Student ID already exists")
 
     # -------- Add Teacher --------
     elif menu == "Add Teacher":
@@ -165,12 +156,14 @@ def dashboard():
     # -------- Generate QR --------
     elif menu == "Generate QR":
 
-        st.subheader("Generate QR")
-
         cursor.execute("SELECT name FROM subjects")
-        subject_list = [x[0] for x in cursor.fetchall()]
+        subjects = [x[0] for x in cursor.fetchall()]
 
-        subject = st.selectbox("Select Subject", subject_list)
+        if not subjects:
+            st.warning("Add subject first")
+            return
+
+        subject = st.selectbox("Select Subject", subjects)
 
         if st.button("Generate QR"):
 
@@ -198,12 +191,12 @@ def dashboard():
     elif menu == "View Report":
 
         cursor.execute("SELECT name FROM subjects")
-        subject_list = [x[0] for x in cursor.fetchall()]
+        subjects = [x[0] for x in cursor.fetchall()]
 
-        subject = st.selectbox("Subject", subject_list)
+        subject = st.selectbox("Select Subject", subjects)
         date = st.date_input("Select Date")
 
-        if st.button("View"):
+        if st.button("View Report"):
 
             cursor.execute("""
             SELECT student_id FROM attendance
@@ -241,7 +234,7 @@ def mark_attendance(session_id):
         st.error("Invalid QR")
         return
 
-    subject,created,active = qr
+    subject, created, active = qr
 
     if active == 0:
         st.error("QR Expired")
@@ -274,7 +267,7 @@ def mark_attendance(session_id):
         today = str(datetime.now().date())
 
         cursor.execute("""
-        SELECT * FROM attendance
+        SELECT 1 FROM attendance
         WHERE student_id=? AND subject=? AND date=?
         """,(sid,subject,today))
 
@@ -282,14 +275,17 @@ def mark_attendance(session_id):
             st.warning("Already Marked")
             return
 
-        cursor.execute("""
-        INSERT INTO attendance(student_id,student_name,subject,date,time)
-        VALUES(?,?,?,?,?)
-        """,(sid,stu[0],subject,today,str(datetime.now().time())))
+        try:
+            cursor.execute("""
+            INSERT INTO attendance(student_id,student_name,subject,date,time)
+            VALUES(?,?,?,?,?)
+            """,(sid,stu[0],subject,today,str(datetime.now().time())))
 
-        conn.commit()
+            conn.commit()
+            st.success("Attendance Marked Successfully")
 
-        st.success("Attendance Marked Successfully")
+        except Exception as e:
+            st.error(f"Database Error: {e}")
 
 # ---------------- MAIN ----------------
 
